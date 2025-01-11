@@ -37,6 +37,11 @@
 内容来自cursor，再次声明，我不是程序员，我不知道这个程序到底使用了哪些人的原创，如果有侵权问题请告知。
 
 
+
+---
+以下为原项目说明
+
+
 [您可以进入项目的官方网站获取更多帮助](http://my-easy-pic-bed.ringotek.cn)
 # (For users who speak English, there is an readme.md in English edition, please roll down the page to read)
 
