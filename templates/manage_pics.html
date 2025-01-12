@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>图片管理 - MY-Easy-Pic-Bed</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyNotePicBed - 图片管理</title>
     <link href="../static/css/bootstrap-4.4.1.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <script src="../static/js/jquery-3.4.1.min.js"></script>
@@ -343,31 +343,17 @@
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
-            margin-bottom: 1rem;
         }
         
         /* 搜索框容器样式 */
         .search-container {
-            min-width: 250px;
-            max-width: 400px;
+            max-width: 600px;
             flex-grow: 1;
         }
         
-        /* 响应式布局调整 */
-        @media (max-width: 992px) {
-            .mb-3.d-flex {
-                flex-direction: column;
-                gap: 1rem;
-            }
-            
-            .action-buttons {
-                width: 100%;
-            }
-            
-            .search-container {
-                width: 100%;
-                max-width: none;
-            }
+        /* 搜索框样式优化 */
+        #searchInput {
+            height: 38px;
         }
         
         /* 按钮样式优化 */
@@ -380,13 +366,13 @@
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <a class="navbar-brand" href="/">MY-Easy-Pic-Bed</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <a class="navbar-brand" href="/">MyNotePicBed</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
             <span class="navbar-toggler-icon"></span>
         </button>
-        <div class="collapse navbar-collapse" id="navbarSupportedContent">
-            <ul class="navbar-nav mr-auto">
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav">
                 <li class="nav-item">
                     <a class="nav-link" href="/">首页</a>
                 </li>
@@ -394,15 +380,13 @@
                     <a class="nav-link" href="/manage">图片管理<span class="sr-only">(current)</span></a>
                 </li>
             </ul>
-            <button class="btn btn-outline-light" id="themeToggle">
-                <i class="fas fa-moon"></i>
-            </button>
         </div>
     </nav>
 
     <div class="container mt-4">
         <h2>图片库管理</h2>
-        <div class="mb-3 d-flex justify-content-between align-items-start">
+        <!-- 功能按钮组 -->
+        <div class="mb-3">
             <div class="action-buttons">
                 <button class="btn btn-primary" id="selectAll">全选</button>
                 <button class="btn btn-danger" id="deleteSelected">删除选中</button>
@@ -414,6 +398,10 @@
                     <i class="fas fa-archive"></i> 归档文件
                 </button>
             </div>
+        </div>
+        
+        <!-- 搜索栏 -->
+        <div class="mb-3">
             <div class="search-container">
                 <div class="input-group">
                     <input type="text" class="form-control" id="searchInput" 
@@ -428,16 +416,9 @@
                     </div>
                 </div>
             </div>
-            <div class="text-muted">
-                当前排序: 
-                {% if current_sort == 'id' %}ID
-                {% elif current_sort == 'filename' %}文件名
-                {% else %}上传时间
-                {% endif %}
-                ({{ '降序' if current_order == 'DESC' else '升序' }})
-                <small id="lastRefresh"></small>
-            </div>
         </div>
+        
+        <!-- 表格部分 -->
         <div class="table-responsive">
             <table class="table table-striped">
                 <thead>
