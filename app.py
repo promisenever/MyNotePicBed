@@ -64,7 +64,7 @@ def local_picuse_host():
         database.commit()  # 确保提交事务
         
         file_link = construct_file_link(filename)
-        flash(file_link)
+        flash('http://' + file_link)
         return jsonify({'file_data': 'http://' + file_link})
         
     except Exception as e:
@@ -103,10 +103,13 @@ def upload_file():
                     (filename,)
                 )
                 database.commit()
+                url = url_for('uploaded_file', filename=filename)
+                # 构造完整的URL
+                full_url = 'http://' + app.config['running_domain']
                 if app.config['running_port'] != 80:
-                    flash(app.config['running_domain'] + ':' + str(app.config['running_port']) + url_for('uploaded_file', filename=filename))
-                else:
-                    flash(app.config['running_domain'] + url_for('uploaded_file', filename=filename))
+                    full_url += ':' + str(app.config['running_port'])
+                full_url += url
+                flash(full_url)
             except Exception as e:
                 flash('出现错误！')
                 print(e.args)
