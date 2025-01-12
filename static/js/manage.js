@@ -456,8 +456,66 @@ class FileCheckManager {
     bindEvents() {
         $('#restoreOrphaned').click(this.handleRestore.bind(this));
         $('#cleanOrphaned').click(this.handleCleanOrphaned.bind(this));
-        $('#cleanMissing').click(() => this.handleClean({ clean_records: true }));
-        $('#cleanAll').click(() => this.handleClean({ clean_files: true, clean_records: true }));
+        $('#cleanSelectedMissing').click(() => this.handleCleanMissing(true));
+        $('#keepSelectedMissing').click(() => this.handleCleanMissing(false));
+        $('#cleanAll').click(() => this.handleCleanAll());
+        $('#selectAllOrphaned').click(this.handleSelectAllOrphaned.bind(this));
+        $('#selectAllMissing').click(this.handleSelectAllMissing.bind(this));
+    }
+    
+    handleSelectAllOrphaned() {
+        const isChecked = $('#selectAllOrphaned').prop('checked');
+        $('.orphaned-file-checkbox').prop('checked', isChecked);
+    }
+    
+    handleSelectAllMissing() {
+        const isChecked = $('#selectAllMissing').prop('checked');
+        $('.missing-file-checkbox').prop('checked', isChecked);
+    }
+    
+    handleCleanMissing(deleteSelected) {
+        const selectedFiles = $('.missing-file-checkbox:checked').map(function() {
+            return {
+                id: $(this).val(),
+                filename: $(this).data('filename')
+            };
+        }).get();
+        
+        if (selectedFiles.length === 0) {
+            utils.showMessage('请选择要处理的记录');
+            return;
+        }
+        
+        const action = deleteSelected ? '删除' : '保留';
+        if (!confirm(`确定要${action}选中的 ${selectedFiles.length} 条记录吗？`)) {
+            return;
+        }
+        
+        fetch('/clean_files', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                clean_records: true,
+                missing_files: selectedFiles,
+                keep_selected: !deleteSelected
+            }),
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                utils.showMessage(`成功${action}选中记录`);
+                $('#fileCheckModal').modal('hide');
+                window.location.reload();
+            } else {
+                utils.showMessage('操作失败：' + result.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('操作失败:', error);
+            utils.showMessage('请求失败，请重试', true);
+        });
     }
     
     checkFiles() {
@@ -481,21 +539,27 @@ class FileCheckManager {
         // 显示孤立文件
         if (data.orphaned_files.length > 0) {
             orphanedDiv.show();
-            const template = document.getElementById('orphanedFileTemplate').content;
             const container = orphanedDiv.find('.file-list');
             container.empty();
             
+            // 添加全选复选框
+            container.append(`
+                <div class="mb-2">
+                    <input type="checkbox" id="selectAllOrphaned" checked>
+                    <label for="selectAllOrphaned">全选/取消全选</label>
+                </div>
+            `);
+            
             data.orphaned_files.forEach(filename => {
-                const clone = template.cloneNode(true);
-                const checkbox = clone.querySelector('input');
-                const label = clone.querySelector('label');
-                
-                checkbox.id = `file-${filename}`;
-                checkbox.value = filename;
-                label.htmlFor = `file-${filename}`;
-                label.textContent = filename;
-                
-                container.append(clone);
+                container.append(`
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input orphaned-file-checkbox" 
+                               id="file-${filename}" value="${filename}" checked>
+                        <label class="form-check-label" for="file-${filename}">
+                            ${filename}
+                        </label>
+                    </div>
+                `);
             });
         } else {
             orphanedDiv.hide();
@@ -504,9 +568,29 @@ class FileCheckManager {
         // 显示丢失文件
         if (data.missing_files.length > 0) {
             missingDiv.show();
-            missingDiv.find('.file-list').html(
-                data.missing_files.map(f => `<div>${f.filename}</div>`).join('')
-            );
+            const container = missingDiv.find('.file-list');
+            container.empty();
+            
+            // 添加全选复选框
+            container.append(`
+                <div class="mb-2">
+                    <input type="checkbox" id="selectAllMissing" checked>
+                    <label for="selectAllMissing">全选/取消全选</label>
+                </div>
+            `);
+            
+            data.missing_files.forEach(file => {
+                container.append(`
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input missing-file-checkbox" 
+                               id="missing-${file.id}" value="${file.id}" checked
+                               data-filename="${file.filename}">
+                        <label class="form-check-label" for="missing-${file.id}">
+                            ${file.filename}
+                        </label>
+                    </div>
+                `);
+            });
         } else {
             missingDiv.hide();
         }
@@ -515,10 +599,9 @@ class FileCheckManager {
     }
     
     handleRestore() {
-        const selectedFiles = [];
-        $('.orphaned-file-checkbox:checked').each(function() {
-            selectedFiles.push($(this).val());
-        });
+        const selectedFiles = $('.orphaned-file-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
         
         if (selectedFiles.length === 0) {
             utils.showMessage('请选择要恢复的文件');
@@ -550,7 +633,7 @@ class FileCheckManager {
                 }
                 utils.showMessage(message.join('\n'));
                 $('#fileCheckModal').modal('hide');
-                window.location.reload(); // 刷新页面以显示恢复的文件
+                window.location.reload();
             } else {
                 utils.showMessage('恢复失败：' + result.message, true);
             }
@@ -579,6 +662,27 @@ class FileCheckManager {
     }
     
     handleClean(options) {
+        let confirmMessage = '';
+        if (options.clean_records) {
+            confirmMessage = '确定要清理所有丢失文件的数据库记录吗？';
+        } else if (options.clean_files && options.clean_records) {
+            confirmMessage = '确定要一键清理所有问题吗？这将删除所有孤立文件并清理所有丢失文件的记录。';
+        }
+        
+        if (confirmMessage && !confirm(confirmMessage)) {
+            return;
+        }
+        
+        // 确保传递正确的数据
+        if (options.clean_records) {
+            options.missing_files = $('#missingFiles .file-list div').map(function() {
+                return { 
+                    id: $(this).data('id'),
+                    filename: $(this).text()
+                };
+            }).get();
+        }
+        
         fetch('/clean_files', {
             method: 'POST',
             headers: {
@@ -590,7 +694,8 @@ class FileCheckManager {
         .then(result => {
             if (result.success) {
                 $('#fileCheckModal').modal('hide');
-                window.location.reload(); // 刷新页面以更新状态
+                utils.showMessage('清理成功');
+                window.location.reload();
             } else {
                 utils.showMessage('清理失败：' + result.message, true);
             }
@@ -598,6 +703,43 @@ class FileCheckManager {
         .catch(error => {
             console.error('清理失败:', error);
             utils.showMessage('清理请求失败，请重试', true);
+        });
+    }
+    
+    handleCleanAll() {
+        const confirmMessage = 
+            '此操作将：\n' +
+            '1. 删除所有没有数据库记录的文件\n' +
+            '2. 删除所有找不到对应文件的数据库记录\n\n' +
+            '确定要执行吗？';
+            
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        fetch('/clean_files', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                clean_files: true,
+                clean_records: true
+            }),
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                utils.showMessage('成功删除所有孤立文件并清理了数据库记录');
+                $('#fileCheckModal').modal('hide');
+                window.location.reload();
+            } else {
+                utils.showMessage('清理操作失败：' + result.message, true);
+            }
+        })
+        .catch(error => {
+            console.error('清理操作失败:', error);
+            utils.showMessage('清理操作请求失败，请重试', true);
         });
     }
 }
