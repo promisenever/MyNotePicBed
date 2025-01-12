@@ -163,31 +163,21 @@ class TableManager {
     }
     
     refreshTable() {
-        const refreshBtn = document.getElementById('refreshTable');
-        const refreshIcon = refreshBtn.querySelector('i');
-        refreshIcon.classList.add('refreshing');
+        const $refreshBtn = $('#refreshTable');
+        const $refreshIcon = $refreshBtn.find('i');
+        const $btn = $(this);
         
-        const urlParams = new URLSearchParams(window.location.search);
-        const sort = urlParams.get('sort') || 'created';
-        const order = urlParams.get('order') || 'DESC';
+        $refreshIcon.addClass('fa-spin');
+        $btn.prop('disabled', true);
         
-        fetch(`${window.location.pathname}?sort=${sort}&order=${order}`)
-            .then(response => response.text())
-            .then(html => {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                document.querySelector('table').innerHTML = doc.querySelector('table').innerHTML;
-                document.getElementById('lastRefresh').textContent = 
-                    `(最后刷新: ${utils.formatTime(new Date())})`;
-                this.initializeEventListeners();
-            })
-            .catch(error => {
-                console.error('刷新失败:', error);
-                utils.showMessage('刷新失败，请重试', true);
-            })
-            .finally(() => {
-                refreshIcon.classList.remove('refreshing');
-            });
+        // 直接刷新页面
+        window.location.reload();
+        
+        // 3秒后如果页面没有刷新，恢复按钮状态
+        setTimeout(() => {
+            $refreshIcon.removeClass('fa-spin');
+            $btn.prop('disabled', false);
+        }, 3000);
     }
     
     initializeEventListeners() {
