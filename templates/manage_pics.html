@@ -575,28 +575,39 @@
                     </button>
                 </div>
                 <div class="modal-body">
+                    <!-- 孤立文件部分（有文件但无数据库记录） -->
                     <div id="orphanedFiles" style="display: none;">
-                        <h6>发现孤立文件（存在文件但数据库无记录）：</h6>
-                        <div class="file-list">
-                            <template id="orphanedFileTemplate">
-                                <div class="custom-control custom-checkbox">
-                                    <input type="checkbox" class="custom-control-input orphaned-file-checkbox" checked>
-                                    <label class="custom-control-label"></label>
-                                </div>
-                            </template>
+                        <h6>发现孤立文件（有文件但数据库无记录）：</h6>
+                        <div class="alert alert-info">
+                            您可以选择要保留的文件添加到数据库，未选择的文件将被删除
+                        </div>
+                        <div class="file-list mb-3"></div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-sm" id="restoreOrphaned">将选中文件添加到数据库</button>
+                            <button class="btn btn-danger btn-sm" id="cleanOrphaned">删除未选中文件</button>
                         </div>
                     </div>
+                    
+                    <!-- 丢失文件部分（有数据库记录但无文件） -->
                     <div id="missingFiles" style="display: none;">
                         <h6>发现丢失文件（数据库有记录但文件不存在）：</h6>
-                        <div class="file-list"></div>
+                        <div class="alert alert-info">
+                            您可以选择要保留或删除的数据库记录
+                        </div>
+                        <div class="file-list mb-3"></div>
+                        <div class="btn-group">
+                            <button class="btn btn-danger btn-sm" id="cleanSelectedMissing">删除选中记录</button>
+                            <button class="btn btn-secondary btn-sm" id="keepSelectedMissing">保留选中记录</button>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <button class="btn btn-danger" id="cleanAll" 
+                            title="删除所有孤立文件并清理所有丢失文件的数据库记录">
+                        <i class="fas fa-broom"></i> 
+                        删除所有孤立文件并清理数据库
+                    </button>
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">关闭</button>
-                    <button type="button" class="btn btn-success" id="restoreOrphaned">恢复选中文件</button>
-                    <button type="button" class="btn btn-danger" id="cleanOrphaned">删除孤立文件</button>
-                    <button type="button" class="btn btn-danger" id="cleanMissing">删除无效记录</button>
-                    <button type="button" class="btn btn-danger" id="cleanAll">清理全部</button>
                 </div>
             </div>
         </div>
