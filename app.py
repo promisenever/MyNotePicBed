@@ -9,11 +9,15 @@ import getConfig as gcf
 import traceback
 import shutil
 from datetime import datetime
+import subprocess
+import sys
+import webbrowser
 
 cf = gcf.get_config()
 
 allowed_extensions = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 upload_folder = os.path.join(os.getcwd(), 'pics')
+trash_folder = os.path.join(os.getcwd(), 'trash')  # 添加回收站文件夹
 print(upload_folder)
 app = Flask(__name__, instance_relative_config=True)
 
@@ -23,6 +27,7 @@ def init_app_config(app, config):
     """初始化应用配置"""
     app.config.update(
         UPLOAD_FOLDER=upload_folder,
+        TRASH_FOLDER=trash_folder,  # 添加回收站配置
         running_domain=config['running_domain'],
         running_port=config['port'],
         MAX_CONTENT_LENGTH=1024 * 1024 * int(config['max_length']),
@@ -32,6 +37,18 @@ def init_app_config(app, config):
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+def move_to_trash(file_path):
+    """将文件移动到回收站文件夹"""
+    try:
+        # 确保回收站文件夹存在
+        os.makedirs(trash_folder, exist_ok=True)
+        # 移动文件到回收站
+        shutil.move(file_path, os.path.join(trash_folder, os.path.basename(file_path)))
+        return True
+    except Exception as e:
+        print(f"移动到回收站失败: {str(e)}")
+        return False
 
 @app.route('/local_pic_host', methods=['POST','GET'])
 def local_picuse_host():
@@ -144,9 +161,51 @@ def uploaded_file(filename):
     return '', 404
 
 
-@app.route('/manage')
+@app.route('/manage', methods=['GET', 'POST'])
 def manage_pics():
     try:
+        if request.method == 'POST':
+            # 检查post请求中是否有文件
+            if 'file' not in request.files:
+                flash('你没有上传文件！')
+                return redirect(request.url)
+            files = request.files.getlist('file')
+            if not files or files[0].filename == '':
+                flash('你没有选择文件！')
+                return redirect(request.url)
+            
+            uploaded_urls = []
+            for file in files:
+                if file and allowed_file(file.filename):
+                    filename = str(int(time.time())) + str(random.randint(1, 99999)) + secure_filename(str(random.randint(1, 7887)) + file.filename)
+                    try:
+                        file.save(os.path.join(upload_folder, filename))
+                        database = db.get_db()
+                        database.execute(
+                            'INSERT INTO pics (filename)'
+                            ' VALUES (?)',
+                            (filename,)
+                        )
+                        database.commit()
+                        url = url_for('uploaded_file', filename=filename)
+                        full_url = 'http://' + app.config['running_domain']
+                        if app.config['running_port'] != 80:
+                            full_url += ':' + str(app.config['running_port'])
+                        full_url += url
+                        uploaded_urls.append(full_url)
+                    except Exception as e:
+                        flash('出现错误！')
+                        print(e.args)
+                        continue
+            
+            if uploaded_urls:
+                for url in uploaded_urls:
+                    flash(url)
+                return redirect(url_for('manage_pics'))
+            else:
+                flash('没有成功上传任何文件！')
+                return redirect(request.url)
+        
         sort_by = request.args.get('sort', 'created')
         order = request.args.get('order', 'DESC')
         page = int(request.args.get('page', 1))
@@ -182,20 +241,18 @@ def manage_pics():
 
 
 def find_file_path(filename):
-    """查找文件的实际路径"""
-    # 首先在 pics 目录查找
-    pics_folder = os.path.join(os.getcwd(), 'pics')
-    file_path = os.path.join(pics_folder, filename)
+    """查找文件的实际路径，包括归档目录"""
+    # 首先检查上传目录
+    file_path = os.path.join(upload_folder, filename)
     if os.path.exists(file_path):
         return file_path
-    
-    # 然后在 images 目录的所有子目录中查找
+        
+    # 如果在上传目录中找不到，搜索归档目录（images目录）
     images_root = os.path.join(os.getcwd(), 'images')
-    if os.path.exists(images_root):
-        for root, _, files in os.walk(images_root):
-            if filename in files:
-                return os.path.join(root, filename)
-    
+    for root, _, files in os.walk(images_root):
+        if filename in files:
+            return os.path.join(root, filename)
+            
     return None
 
 @app.route('/delete_pic', methods=['POST'])
@@ -207,10 +264,10 @@ def delete_pic():
         if not filename or not pic_id:
             return jsonify({'success': False, 'message': '参数不完整'})
             
-        # 查找并删除文件
         file_path = find_file_path(filename)
         if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+            if not move_to_trash(file_path):
+                return jsonify({'success': False, 'message': '移动到回收站失败'})
             
         # 删除数据库记录
         database = db.get_db()
@@ -241,14 +298,17 @@ def delete_pics():
             if not filename or not pic_id:
                 continue
                 
-            # 查找并删除文件
             file_path = find_file_path(filename)
             if file_path and os.path.exists(file_path):
                 try:
-                    os.remove(file_path)
-                    # 删除数据库记录
-                    database.execute('DELETE FROM pics WHERE id = ?', (pic_id,))
-                    deleted_ids.append(pic_id)
+                    if move_to_trash(file_path):
+                        database.execute('DELETE FROM pics WHERE id = ?', (pic_id,))
+                        deleted_ids.append(pic_id)
+                    else:
+                        failed_deletes.append({
+                            'filename': filename,
+                            'error': '移动到回收站失败'
+                        })
                 except Exception as e:
                     failed_deletes.append({
                         'filename': filename,
@@ -317,34 +377,74 @@ def restore_files():
 
 @app.route('/search_pics')
 def search_pics():
-    query = request.args.get('query', '')
-    sort_by = request.args.get('sort', 'created')
-    order = request.args.get('order', 'DESC')
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 20))
-    
-    if not query:
-        return jsonify([])
-    
-    pics, total, total_pages = db.search_pics(query, sort_by, order, page, per_page)
-    
-    domain = 'http://' + app.config['running_domain']
-    if app.config['running_port'] != 80:
-        domain += ':' + str(app.config['running_port'])
-    
-    results = {
-        'items': [{
-            'id': pic['id'],
-            'filename': pic['filename'],
-            'created': pic['created'],
-            'url': domain + url_for('uploaded_file', filename=pic['filename'])
-        } for pic in pics],
-        'total': total,
-        'total_pages': total_pages,
-        'current_page': page
-    }
-    
-    return jsonify(results)
+    try:
+        query = request.args.get('query', '').strip()
+        sort = request.args.get('sort', 'created')
+        order = request.args.get('order', 'DESC')
+        page = int(request.args.get('page', 1))
+        per_page = 10
+
+        database = db.get_db()
+        
+        # 构建基础查询
+        base_query = '''
+            SELECT id, filename, created 
+            FROM pics 
+        '''
+        
+        params = []
+        if query:
+            # 修改搜索条件，使用 LIKE 进行模糊匹配
+            base_query += '''
+                WHERE (
+                    filename LIKE ? 
+                    OR created LIKE ? 
+                    OR filename LIKE '%' || ? || '%'
+                )
+            '''
+            params.extend(['%' + query + '%', '%' + query + '%', query])
+        else:
+            base_query += ' WHERE 1=1'
+
+        # 获取总记录数
+        count_query = f"SELECT COUNT(*) as total FROM ({base_query})"
+        total = database.execute(count_query, params).fetchone()['total']
+
+        # 添加排序和分页
+        base_query += f' ORDER BY {sort} {order} LIMIT ? OFFSET ?'
+        params.extend([per_page, (page - 1) * per_page])
+
+        # 执行查询
+        pics = database.execute(base_query, params).fetchall()
+
+        # 构造结果
+        items = []
+        for pic in pics:
+            # 查找实际文件路径
+            file_path = find_file_path(pic['filename'])
+            if file_path:
+                url = url_for('uploaded_file', filename=pic['filename'])
+                full_url = 'http://' + app.config['running_domain']
+                if app.config['running_port'] != 80:
+                    full_url += ':' + str(app.config['running_port'])
+                full_url += url
+
+                items.append({
+                    'id': pic['id'],
+                    'filename': pic['filename'],
+                    'url': full_url,
+                    'created': pic['created']
+                })
+
+        return jsonify({
+            'items': items,
+            'total': total,
+            'current_page': page,
+            'total_pages': (total + per_page - 1) // per_page
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.errorhandler(500)
 def internal_error(error):
@@ -420,6 +520,56 @@ def archive_files():
             'message': f'归档文件时出错: {str(e)}'
         })
 
+@app.route('/restart_app', methods=['POST'])
+def restart_app():
+    try:
+        # 使用 cmd /c 来执行批处理文件
+        subprocess.Popen('cmd /c restart.bat', shell=True)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/open_folder', methods=['POST'])
+def open_folder():
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        
+        if filename:
+            # 如果指定了文件名，查找文件位置
+            file_path = None
+            # 检查 pics 目录
+            pics_path = os.path.join(os.getcwd(), 'pics', filename)
+            if os.path.exists(pics_path):
+                file_path = os.path.dirname(pics_path)
+            else:
+                # 检查 images 目录
+                images_root = os.path.join(os.getcwd(), 'images')
+                for root, _, files in os.walk(images_root):
+                    if filename in files:
+                        file_path = root
+                        break
+            
+            if not file_path:
+                return jsonify({'success': False, 'message': '找不到文件'})
+                
+            folder_path = file_path
+        else:
+            # 如果没有指定文件名，打开 pics 目录
+            folder_path = os.path.join(os.getcwd(), 'pics')
+            
+        # 打开文件夹
+        if sys.platform == 'win32':
+            os.startfile(folder_path)
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.Popen(['open', folder_path])
+        else:  # linux
+            subprocess.Popen(['xdg-open', folder_path])
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 if __name__ == '__main__':
     # 初始化配置
     init_app_config(app, cf)
@@ -427,6 +577,7 @@ if __name__ == '__main__':
     # 确保必要目录存在
     os.makedirs(app.instance_path, exist_ok=True)
     os.makedirs(upload_folder, exist_ok=True)
+    os.makedirs(trash_folder, exist_ok=True)
     
     # 异步执行文件检查
     def async_check_files():
